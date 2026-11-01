@@ -8,18 +8,19 @@ Implements:
 """
 import heapq
 from dataclasses import dataclass, field
-from typing import List, Tuple, Set
+from typing import List, Tuple, Set, Optional, Dict
 from app.config import settings
 from app.matching.index import ReportRecord, matching_index
 from app.matching.heuristics import (
     calculate_category_score,
     calculate_location_score,
+    calculate_haversine_location_score,
     calculate_date_score,
 )
 from app.matching.tokenizer import calculate_jaccard_similarity
 
 
-@dataclass(order=True)
+@dataclass(order=True, slots=True)
 class ScoredMatch:
     # Priority queue sort key: (-total_score, days_diff, candidate_id)
     # Note: We use negative score in standard min-heap to keep highest scores
@@ -41,13 +42,28 @@ class ScoredMatch:
         self.sort_key = (-round(self.total_score, 2), self.days_diff, self.candidate_id)
 
 
-def score_candidate(source: ReportRecord, candidate: ReportRecord) -> ScoredMatch:
+def score_candidate(
+    source: ReportRecord,
+    candidate: ReportRecord,
+    custom_clusters: Optional[Dict[str, Set[str]]] = None,
+) -> ScoredMatch:
     """Calculates all component scores and plain-language reasons."""
     # 1. Category
     c_score, c_reason = calculate_category_score(source.category, candidate.category)
 
-    # 2. Location
-    l_score, l_reason = calculate_location_score(source.location_text, candidate.location_text)
+    # 2. Location (Haversine GPS proximity when both have coordinates, else facility cluster/text)
+    if (
+        source.latitude is not None and source.longitude is not None
+        and candidate.latitude is not None and candidate.longitude is not None
+    ):
+        l_score, l_reason = calculate_haversine_location_score(
+            source.latitude, source.longitude,
+            candidate.latitude, candidate.longitude,
+        )
+    else:
+        l_score, l_reason = calculate_location_score(
+            source.location_text, candidate.location_text, custom_clusters=custom_clusters
+        )
 
     # 3. Date
     d_score, d_reason, days_diff = calculate_date_score(source.event_date, candidate.event_date)
@@ -111,42 +127,19 @@ class MatchingEngine:
         """
         if not scored_matches:
             return []
+        if len(scored_matches) <= top_n:
+            return sorted(
+                scored_matches,
+                key=lambda m: (-round(m.total_score, 2), m.days_diff, m.candidate_id),
+            )
 
-
-        # Python heapq is a min-heap.
-        # To maintain the top N maximum elements:
-        # We store elements with an inverted sort tuple: (total_score, -days_diff, candidate_id_desc)
-        # So the smallest of the top N sits at heap root and gets popped.
-        # Alternatively, we can sort directly if C is small, or use nlargest.
-        # To demonstrate DSA priority-queue rigor explicitly:
-        class HeapItem:
-            def __init__(self, match: ScoredMatch):
-                self.match = match
-                # Min-heap key: lowest score is smallest; if scores tie, higher days_diff is smallest;
-                # if days_diff tie, lex-larger id is smallest (so it gets evicted).
-                self.key = (match.total_score, -match.days_diff, match.candidate_id)
-
-            def __lt__(self, other):
-                # When comparing in min-heap:
-                if self.match.total_score != other.match.total_score:
-                    return self.match.total_score < other.match.total_score
-                if self.match.days_diff != other.match.days_diff:
-                    return self.match.days_diff > other.match.days_diff
-                return self.match.candidate_id > other.match.candidate_id
-
-        heap: List[HeapItem] = []
-        for item in scored_matches:
-            heap_item = HeapItem(item)
-            if len(heap) < top_n:
-                heapq.heappush(heap, heap_item)
-            else:
-                if heap_item > heap[0]:
-                    heapq.heappushpop(heap, heap_item)
-
-        # Extract items and sort in proper descending order
-        top_items = [h.match for h in heap]
-        top_items.sort(key=lambda m: (-m.total_score, m.days_diff, m.candidate_id))
-        return top_items
+        # Uses C-accelerated heapq.nsmallest with inverted sort key:
+        # (-total_score, days_diff, candidate_id) to select top-N maximum deterministically
+        return heapq.nsmallest(
+            top_n,
+            scored_matches,
+            key=lambda m: (-round(m.total_score, 2), m.days_diff, m.candidate_id),
+        )
 
     @classmethod
     def match_report(
@@ -155,6 +148,7 @@ class MatchingEngine:
         limit: int = 5,
         min_score: float = 0.0,
         use_linear_fallback: bool = False,
+        custom_clusters: Optional[Dict[str, Set[str]]] = None,
     ) -> Tuple[List[ScoredMatch], int]:
         """
         Executes candidate generation, scoring, and ranking.
@@ -180,7 +174,7 @@ class MatchingEngine:
             if not cand_rec:
                 continue
 
-            match = score_candidate(source, cand_rec)
+            match = score_candidate(source, cand_rec, custom_clusters=custom_clusters)
             if match.total_score >= min_score:
                 scored.append(match)
 

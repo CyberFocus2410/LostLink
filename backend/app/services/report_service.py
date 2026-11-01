@@ -15,13 +15,16 @@ from app.matching.engine import MatchingEngine
 
 class ReportService:
     @staticmethod
-    def create_report(db: Session, data: ReportCreate) -> Report:
-        """Validates, persists in SQLite, and updates in-memory DSA indexes."""
+    def create_report(db: Session, data: ReportCreate, owner_id: str | None = None) -> Report:
+        """Validates, persists, and updates in-memory DSA indexes.
+        owner_id is optional for backward compat with seed data and tests."""
         report_dict = data.model_dump()
         report_dict["normalized_location"] = normalize_location(data.location_text)
         report_dict["type"] = data.type.value
         report_dict["category"] = data.category.value
         report_dict["status"] = "ACTIVE"
+        if owner_id:
+            report_dict["owner_id"] = owner_id
 
         report = ReportRepository.create(db, report_dict)
 
@@ -46,6 +49,8 @@ class ReportService:
         date_from=None,
         date_to=None,
         location: Optional[str] = None,
+        owner_id: Optional[str] = None,
+        community_id: Optional[str] = None,
         page: int = 1,
         limit: int = 20,
         sort: str = "date_desc",
@@ -59,6 +64,8 @@ class ReportService:
             date_from=date_from,
             date_to=date_to,
             location=location,
+            owner_id=owner_id,
+            community_id=community_id,
             page=page,
             limit=limit,
             sort=sort,
@@ -118,11 +125,27 @@ class ReportService:
             source_record = ReportRecord.from_model(report)
             matching_index.add(source_record)
 
+        # Check for community-specific facility clusters in database
+        custom_clusters = None
+        if getattr(report, "community_id", None):
+            from app.models.report import FacilityCluster
+            import json
+            db_clusters = db.query(FacilityCluster).filter(FacilityCluster.community_id == report.community_id).all()
+            if db_clusters:
+                custom_clusters = {}
+                for c in db_clusters:
+                    try:
+                        aliases_list = json.loads(c.aliases)
+                    except Exception:
+                        aliases_list = [a.strip().lower() for a in c.aliases.split(",") if a.strip()]
+                    custom_clusters[c.name.lower()] = set(aliases_list)
+
         # Run DSA matching engine
         ranked_matches, pool_size = MatchingEngine.match_report(
             source=source_record,
             limit=limit,
             min_score=min_score,
+            custom_clusters=custom_clusters,
         )
 
         match_items: List[MatchResultItem] = []
@@ -165,7 +188,70 @@ class ReportService:
 
     @staticmethod
     def rebuild_all_indexes(db: Session) -> int:
-        """Rebuilds in-memory index from SQLite database."""
-        reports = db.query(Report).all()
+        """Rebuilds in-memory index from database ACTIVE reports only."""
+        reports = db.query(Report).filter(Report.status == "ACTIVE").all()
         matching_index.rebuild(reports)
         return len(reports)
+
+    @staticmethod
+    def add_report_image(
+        db: Session,
+        report_id: str,
+        file_bytes: bytes,
+        original_filename: str,
+        content_type: str,
+    ):
+        report = ReportRepository.get_by_id(db, report_id)
+        if not report:
+            raise ValueError(f"Report '{report_id}' not found.")
+        if len(report.images) >= 3:
+            raise ValueError("Maximum 3 images allowed per report.")
+
+        from app.services.image_service import ImageService
+        from app.services.storage import get_storage_provider
+        from app.models.report import ReportImage
+
+        main_bytes, thumb_bytes, path_main, path_thumb, out_mime = ImageService.validate_and_process_image(
+            file_bytes, original_filename, content_type
+        )
+
+        storage = get_storage_provider()
+        image_url = storage.upload_file(main_bytes, path_main, out_mime)
+        thumb_url = storage.upload_file(thumb_bytes, path_thumb, out_mime)
+
+        image_record = ReportImage(
+            report_id=report_id,
+            image_url=image_url,
+            thumbnail_url=thumb_url,
+            storage_path=path_main,
+            file_size=len(main_bytes),
+            content_type=out_mime,
+        )
+        db.add(image_record)
+        db.commit()
+        db.refresh(image_record)
+        return image_record
+
+    @staticmethod
+    def delete_report_image(db: Session, report_id: str, image_id: str) -> bool:
+        from app.models.report import ReportImage
+        from app.services.storage import get_storage_provider
+
+        image = db.query(ReportImage).filter(
+            ReportImage.id == image_id,
+            ReportImage.report_id == report_id
+        ).first()
+        if not image:
+            return False
+
+        storage = get_storage_provider()
+        try:
+            storage.delete_file(image.storage_path)
+            thumb_path = image.storage_path.replace(".webp", "_thumb.webp")
+            storage.delete_file(thumb_path)
+        except Exception:
+            pass
+
+        db.delete(image)
+        db.commit()
+        return True

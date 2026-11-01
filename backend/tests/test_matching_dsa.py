@@ -21,6 +21,8 @@ from app.matching.heuristics import (
     calculate_location_score,
     calculate_date_score,
     normalize_location,
+    haversine_distance_meters,
+    calculate_haversine_location_score,
 )
 from app.matching.index import MatchingIndex, ReportRecord
 from app.matching.engine import MatchingEngine, score_candidate
@@ -296,3 +298,102 @@ def test_inverted_index_vs_linear_scan_equivalence():
     # Inverted index candidates must all be valid opposite-type candidates present in linear scan
     for cid in inverted_candidates:
         assert cid in linear_candidates
+
+
+# --- 9. Phase 2: Haversine Coordinates & Multi-Community Tests ---
+
+def test_haversine_distance_calculation():
+    # Known distance: Eiffel Tower (48.8584, 2.2945) to Louvre Museum (48.8606, 2.3376) ~ 3.16 km
+    dist = haversine_distance_meters(48.8584, 2.2945, 48.8606, 2.3376)
+    assert 3100 <= dist <= 3300
+
+    # Same point distance is 0
+    assert haversine_distance_meters(40.7128, -74.0060, 40.7128, -74.0060) == 0.0
+
+
+def test_haversine_location_scoring_bands():
+    lat, lon = 37.7749, -122.4194
+
+    # Band 1: <= 100 meters -> 100.0 (e.g. ~50m offset)
+    # 0.00045 degrees lat is ~50 meters
+    score, exp = calculate_haversine_location_score(lat, lon, lat + 0.00045, lon)
+    assert score == 100.0
+    assert "within 100m" in exp
+
+    # Band 2: <= 1000 meters -> 70.0 (e.g. ~500m offset)
+    # 0.0045 degrees lat is ~500 meters
+    score, exp = calculate_haversine_location_score(lat, lon, lat + 0.0045, lon)
+    assert score == 70.0
+    assert "within 1km" in exp
+
+    # Band 3: > 1000 meters -> 0.0 (e.g. ~2km offset)
+    # 0.02 degrees lat is ~2200 meters
+    score, exp = calculate_haversine_location_score(lat, lon, lat + 0.02, lon)
+    assert score == 0.0
+    assert "too large" in exp
+
+
+def test_matching_engine_haversine_integration():
+    source = make_record("SRC_1", "LOST", "ELECTRONICS", "Earbuds", "Sony wireless earbuds")
+    source.latitude = 37.7749
+    source.longitude = -122.4194
+
+    # Candidate 1: nearby (<100m)
+    cand_near = make_record("CAND_NEAR", "FOUND", "ELECTRONICS", "Earbuds", "Found earbuds")
+    cand_near.latitude = 37.7749 + 0.0004
+    cand_near.longitude = -122.4194
+
+    # Candidate 2: far (>1000m)
+    cand_far = make_record("CAND_FAR", "FOUND", "ELECTRONICS", "Earbuds", "Found earbuds")
+    cand_far.latitude = 37.7749 + 0.02
+    cand_far.longitude = -122.4194
+
+    # Candidate 3: missing coordinates (falls back to text cluster)
+    cand_fallback = make_record("CAND_FALLBACK", "FOUND", "ELECTRONICS", "Earbuds", "Found earbuds", location_text="Library 2nd Floor")
+
+    comp_near = score_candidate(source, cand_near)
+    assert comp_near.location_score == 100.0
+    assert any("proximity" in r.lower() for r in comp_near.reasons)
+
+    comp_far = score_candidate(source, cand_far)
+    assert comp_far.location_score == 0.0
+
+    comp_fallback = score_candidate(source, cand_fallback)
+    # source has location_text="Library 2nd Floor" by make_record default, so text match applies
+    assert comp_fallback.location_score == 100.0
+
+
+def test_community_isolation_in_indexing():
+    idx = MatchingIndex()
+
+    # Source in Community Alpha
+    source = make_record("SRC_COMM", "LOST", "ELECTRONICS", "Tablet", "Samsung Galaxy tablet")
+    source.community_id = "comm_alpha"
+    idx.add(source)
+
+    # Candidate 1: same community Alpha
+    cand1 = make_record("CAND_ALPHA", "FOUND", "ELECTRONICS", "Tablet", "Samsung tablet")
+    cand1.community_id = "comm_alpha"
+    idx.add(cand1)
+
+    # Candidate 2: different community Beta
+    cand2 = make_record("CAND_BETA", "FOUND", "ELECTRONICS", "Tablet", "Samsung tablet")
+    cand2.community_id = "comm_beta"
+    idx.add(cand2)
+
+    # Candidate 3: unassigned community (legacy / global)
+    cand3 = make_record("CAND_GLOBAL", "FOUND", "ELECTRONICS", "Tablet", "Samsung tablet")
+    cand3.community_id = None
+    idx.add(cand3)
+
+    candidates = idx.get_candidate_ids(source)
+    assert "CAND_ALPHA" in candidates
+    assert "CAND_BETA" not in candidates  # Isolated!
+    assert "CAND_GLOBAL" in candidates  # Global matches both
+
+    # Also verify linear scan produces identical isolation
+    linear_cands = idx.linear_scan_candidate_ids(source)
+    assert "CAND_ALPHA" in linear_cands
+    assert "CAND_BETA" not in linear_cands
+    assert "CAND_GLOBAL" in linear_cands
+

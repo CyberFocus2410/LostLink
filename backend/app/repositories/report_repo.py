@@ -32,6 +32,8 @@ class ReportRepository:
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
         location: Optional[str] = None,
+        owner_id: Optional[str] = None,
+        community_id: Optional[str] = None,
         page: int = 1,
         limit: int = 20,
         sort: str = "date_desc",
@@ -51,6 +53,10 @@ class ReportRepository:
             query = query.filter(Report.event_date <= date_to)
         if location:
             query = query.filter(Report.location_text.ilike(f"%{location}%"))
+        if owner_id:
+            query = query.filter(Report.owner_id == owner_id)
+        if community_id:
+            query = query.filter(Report.community_id == community_id)
 
         if q:
             term = f"%{q.strip()}%"
