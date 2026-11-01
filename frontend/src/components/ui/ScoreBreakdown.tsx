@@ -53,7 +53,7 @@ export const ScoreBreakdown: React.FC<ScoreBreakdownProps> = ({
       </div>
 
       {/* Component Pills */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, fontSize: "0.78rem" }}>
+      <div className="score-components-grid">
         <div style={{ padding: "4px 8px", backgroundColor: "var(--color-canvas)", borderRadius: 4, border: "1px solid var(--color-border)" }}>
           <div style={{ color: "var(--color-ink-secondary)" }}>Category (35%)</div>
           <div style={{ fontWeight: 600, color: "var(--color-ink-primary)" }}>{components.category_score} pts</div>

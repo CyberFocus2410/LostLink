@@ -126,7 +126,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       </section>
 
       {/* Real Statistics Metrics */}
-      <section className="grid-3" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+      <section className="stats-grid">
         <div className="card" style={{ padding: "var(--space-4)" }}>
           <div className="text-secondary" style={{ fontSize: "0.8rem", fontWeight: 600 }}>ACTIVE REPORTS</div>
           <div style={{ fontSize: "1.85rem", fontWeight: 700, color: "var(--color-ink-primary)", marginTop: 4 }}>

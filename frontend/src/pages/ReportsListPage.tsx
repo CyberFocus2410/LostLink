@@ -105,27 +105,29 @@ export const ReportsListPage: React.FC<ReportsListPageProps> = ({
       <div className="card" style={{ padding: "var(--space-4)" }}>
         <form onSubmit={handleSearchSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {/* Top Row: Search and submit */}
-          <div style={{ display: "flex", gap: 8 }}>
-            <div style={{ position: "relative", flex: 1 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ position: "relative", flex: "1 1 200px" }}>
               <input
                 type="text"
                 className="form-input"
-                placeholder="Search by keywords, item name, or description..."
+                placeholder="Search keywords, item name..."
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 style={{ paddingLeft: 34 }}
               />
               <Search
                 size={16}
-                style={{ position: "absolute", left: 10, top: 11, color: "var(--color-ink-secondary)" }}
+                style={{ position: "absolute", left: 10, top: 12, color: "var(--color-ink-secondary)" }}
               />
             </div>
-            <Button type="submit" variant="primary" icon={<Search size={15} />}>
-              Search
-            </Button>
-            <Button type="button" variant="secondary" icon={<RefreshCw size={15} />} onClick={handleResetFilters}>
-              Reset
-            </Button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button type="submit" variant="primary" icon={<Search size={15} />}>
+                Search
+              </Button>
+              <Button type="button" variant="secondary" icon={<RefreshCw size={15} />} onClick={handleResetFilters}>
+                Reset
+              </Button>
+            </div>
           </div>
 
           {/* Bottom Filter Controls */}

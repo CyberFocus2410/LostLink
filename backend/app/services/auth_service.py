@@ -99,36 +99,52 @@ def refresh_token_expires_at() -> datetime:
 _ACCESS_COOKIE = "lostlink_access"
 _REFRESH_COOKIE = "lostlink_refresh"
 
-_COOKIE_COMMON = dict(
-    httponly=True,
-    samesite="lax",
-    secure=settings.COOKIE_SECURE,
-    domain=settings.COOKIE_DOMAIN or None,
-)
+
+def _get_cookie_domain() -> Optional[str]:
+    cd = settings.COOKIE_DOMAIN.strip() if settings.COOKIE_DOMAIN else ""
+    # Only use domain if it contains a valid dot-separated host and isn't a hex container id
+    if cd and "." in cd and not cd.startswith("localhost") and not cd.endswith(".local") and len(cd) < 50:
+        return cd
+    return None
 
 
 def set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
     """Write both tokens as httpOnly cookies on the response object."""
+    domain = _get_cookie_domain()
+    common = dict(
+        httponly=True,
+        samesite="lax",
+        secure=settings.COOKIE_SECURE,
+        domain=domain,
+    )
     response.set_cookie(
         key=_ACCESS_COOKIE,
         value=access_token,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
-        **_COOKIE_COMMON,
+        **common,
     )
     response.set_cookie(
         key=_REFRESH_COOKIE,
         value=refresh_token,
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        path="/api/auth",   # Scope to refresh endpoint only
-        **_COOKIE_COMMON,
+        path="/",
+        **common,
     )
 
 
 def clear_auth_cookies(response) -> None:
     """Expire both cookies immediately."""
-    response.delete_cookie(key=_ACCESS_COOKIE, path="/", **_COOKIE_COMMON)
-    response.delete_cookie(key=_REFRESH_COOKIE, path="/api/auth", **_COOKIE_COMMON)
+    domain = _get_cookie_domain()
+    common = dict(
+        httponly=True,
+        samesite="lax",
+        secure=settings.COOKIE_SECURE,
+        domain=domain,
+    )
+    response.delete_cookie(key=_ACCESS_COOKIE, path="/", **common)
+    response.delete_cookie(key=_REFRESH_COOKIE, path="/", **common)
+    response.delete_cookie(key=_REFRESH_COOKIE, path="/api/auth", **common)
 
 
 # ────────────────────────── FastAPI dependencies ──────────────────────────
