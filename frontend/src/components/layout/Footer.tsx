@@ -1,6 +1,10 @@
 import React from "react";
 
-export const Footer: React.FC = () => {
+interface FooterProps {
+  onNavigate?: (page: "privacy" | "terms") => void;
+}
+
+export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
   return (
     <footer
       style={{
@@ -26,14 +30,32 @@ export const Footer: React.FC = () => {
         <div>
           <strong style={{ color: "var(--color-ink-primary)" }}>LostLink</strong> — Smart Lost & Found Matcher
           <p style={{ marginTop: 2, fontSize: "0.78rem" }}>
-            Campus Problem-Based Learning (PBL) System. Deterministic Inverted Index & Bounded Min-Heap Core.
+            Deterministic Inverted Index & Bounded Min-Heap Core. Double-blind privacy protection.
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 16 }}>
+        <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+          {onNavigate && (
+            <>
+              <button
+                type="button"
+                onClick={() => onNavigate("privacy")}
+                style={{ background: "none", border: "none", color: "var(--color-teal)", cursor: "pointer", fontSize: "0.82rem", padding: 0 }}
+              >
+                Privacy Policy
+              </button>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={() => onNavigate("terms")}
+                style={{ background: "none", border: "none", color: "var(--color-teal)", cursor: "pointer", fontSize: "0.82rem", padding: 0 }}
+              >
+                Terms of Service
+              </button>
+              <span>•</span>
+            </>
+          )}
           <span>Weights: 35% C · 25% L · 20% D · 20% K</span>
-          <span>•</span>
-          <span>Decay: 15 pts/day</span>
         </div>
       </div>
     </footer>
