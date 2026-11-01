@@ -2,8 +2,9 @@
 Heuristic rules and scoring components for LostLink matching engine.
 Heuristic weights, location alias dictionary, category compatibility, and date decay.
 """
+import math
 from datetime import date
-from typing import Tuple, Dict, Set
+from typing import Tuple, Dict, Set, Optional
 from app.config import settings
 
 # Campus location clusters / aliases for proximity scoring (Score = 70.0)
@@ -30,6 +31,44 @@ LOCATION_CLUSTERS: Dict[str, Set[str]] = {
         "bursar office", "registrar", "main lawn"
     }
 }
+
+
+def haversine_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Computes great-circle distance between two GPS coordinates using Haversine formula.
+    Returns distance in meters.
+    """
+    R = 6371000.0  # Earth's radius in meters
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(delta_phi / 2.0) ** 2
+        + math.cos(phi1) * math.cos(phi2) * (math.sin(delta_lambda / 2.0) ** 2)
+    )
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return R * c
+
+
+def calculate_haversine_location_score(
+    lat_a: float, lon_a: float, lat_b: float, lon_b: float
+) -> Tuple[float, str]:
+    """
+    Computes GPS location score using Haversine distance (0-100 scale):
+    - Within 100 meters: 100.0 (Immediate area)
+    - Within 1000 meters (1 km): 70.0 (Nearby area / same facility)
+    - Beyond 1000 meters: 0.0 (Too distant)
+    """
+    dist_m = haversine_distance_meters(lat_a, lon_a, lat_b, lon_b)
+    if dist_m <= 100.0:
+        return 100.0, f"GPS proximity within 100m (~{round(dist_m)}m apart)"
+    elif dist_m <= 1000.0:
+        return 70.0, f"GPS proximity within 1km (~{round(dist_m)}m apart)"
+    else:
+        dist_km = round(dist_m / 1000.0, 1)
+        return 0.0, f"GPS distance too large ({dist_km}km apart)"
 
 
 def normalize_location(location: str) -> str:
@@ -59,12 +98,18 @@ def calculate_category_score(cat_a: str, cat_b: str) -> Tuple[float, str]:
     return 0.0, f"Incompatible categories ({norm_a} vs {norm_b})"
 
 
-def calculate_location_score(loc_a: str, loc_b: str) -> Tuple[float, str]:
+def calculate_location_score(
+    loc_a: str,
+    loc_b: str,
+    custom_clusters: Optional[Dict[str, Set[str]]] = None,
+) -> Tuple[float, str]:
     """
     Computes location proximity score (0-100).
     Exact match: 100.0
     Nearby / same cluster: 70.0
     Unrelated: 0.0
+
+    Uses custom_clusters (from DB) if provided, otherwise falls back to default LOCATION_CLUSTERS.
     """
     norm_a = normalize_location(loc_a)
     norm_b = normalize_location(loc_b)
@@ -75,8 +120,10 @@ def calculate_location_score(loc_a: str, loc_b: str) -> Tuple[float, str]:
     if norm_a == norm_b:
         return 100.0, f"Identical reported location ({loc_a.strip()})"
 
+    clusters = custom_clusters if custom_clusters is not None else LOCATION_CLUSTERS
+
     # Check if both belong to the same cluster/alias
-    for cluster_name, aliases in LOCATION_CLUSTERS.items():
+    for cluster_name, aliases in clusters.items():
         if (norm_a in aliases or any(a in norm_a for a in aliases)) and \
            (norm_b in aliases or any(b in norm_b for b in aliases)):
             clean_cluster = cluster_name.replace("_", " ").title()

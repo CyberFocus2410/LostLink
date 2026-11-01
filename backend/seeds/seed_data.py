@@ -11,9 +11,10 @@ backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
 from app.database import SessionLocal, Base, engine
-from app.models.report import Report
-from app.matching.heuristics import normalize_location
+from app.models.report import Report, Community, FacilityCluster
+from app.matching.heuristics import normalize_location, LOCATION_CLUSTERS
 from app.matching.index import matching_index, ReportRecord
+import json
 
 
 SEED_REPORTS = [
@@ -157,6 +158,29 @@ def seed_database():
     db = SessionLocal()
 
     try:
+        # 1. Ensure default community exists
+        default_community = db.query(Community).filter(Community.slug == "main-campus").first()
+        if not default_community:
+            default_community = Community(
+                name="Main Campus",
+                slug="main-campus",
+                description="Default university campus community",
+                is_active=True,
+            )
+            db.add(default_community)
+            db.commit()
+            db.refresh(default_community)
+
+            # Seed default facility clusters
+            for cluster_name, aliases in LOCATION_CLUSTERS.items():
+                fc = FacilityCluster(
+                    community_id=default_community.id,
+                    name=cluster_name.replace("_", " ").title(),
+                    aliases=json.dumps(sorted(list(aliases))),
+                )
+                db.add(fc)
+            db.commit()
+
         # Check if already seeded
         existing_count = db.query(Report).count()
         if existing_count > 0:
@@ -187,6 +211,7 @@ def seed_database():
                 contact_email=item["contact_email"],
                 contact_phone=item.get("contact_phone"),
                 status=item["status"],
+                community_id=default_community.id,
             )
             db.add(report)
             created_reports.append(report)
