@@ -163,6 +163,13 @@ export interface ReportFlagItem {
   reason: string;
   status: string;
   created_at: string;
+  report_item_name?: string;
+  report_type?: string;
+  report_category?: string;
+  report_status?: string;
+  report_description?: string;
+  report_location?: string;
+  report_image_url?: string;
 }
 
 export interface ReportFlagPayload {

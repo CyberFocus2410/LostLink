@@ -47,6 +47,9 @@ class ReportRepository:
             query = query.filter(Report.category == category)
         if status:
             query = query.filter(Report.status == status)
+        elif not owner_id:
+            # Public listing: strictly exclude taken down (HIDDEN) reports
+            query = query.filter(Report.status != "HIDDEN")
         if date_from:
             query = query.filter(Report.event_date >= date_from)
         if date_to:

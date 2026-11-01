@@ -207,6 +207,79 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({
         </div>
       )}
 
+      {/* Admin Quick Moderation Strip */}
+      {(user?.role === "admin" || user?.role === "moderator") && (
+        <div
+          className="card"
+          style={{
+            backgroundColor: report.status === "HIDDEN" ? "var(--color-error-bg)" : "var(--color-sage-light)",
+            borderColor: report.status === "HIDDEN" ? "var(--color-error)" : "var(--color-teal)",
+            padding: "12px 18px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--color-ink-primary)" }}>
+              Admin Moderation:
+            </span>
+            <span
+              className={`badge ${
+                report.status === "ACTIVE"
+                  ? "badge-active"
+                  : report.status === "RESOLVED"
+                  ? "badge-resolved"
+                  : "badge-lost"
+              }`}
+            >
+              {report.status === "HIDDEN" ? "TAKEN DOWN (HIDDEN)" : report.status}
+            </span>
+            <span style={{ fontSize: "0.82rem", color: "var(--color-ink-secondary)" }}>
+              {report.status === "HIDDEN"
+                ? "This post is taken down and hidden from public search & matching."
+                : "This post is live and visible to campus users."}
+            </span>
+          </div>
+
+          <div>
+            {report.status === "HIDDEN" ? (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const updated = await api.moderateReportStatus(report.id, "ACTIVE");
+                    setReport(updated);
+                  } catch (e: any) {
+                    alert(e.message || "Failed to restore report");
+                  }
+                }}
+              >
+                Restore Post (Make Visible)
+              </Button>
+            ) : (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const updated = await api.moderateReportStatus(report.id, "HIDDEN");
+                    setReport(updated);
+                  } catch (e: any) {
+                    alert(e.message || "Failed to take down report");
+                  }
+                }}
+              >
+                Take Down (Hide from Public)
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Report Card */}
       <section className="card" style={{ padding: "var(--space-6)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>

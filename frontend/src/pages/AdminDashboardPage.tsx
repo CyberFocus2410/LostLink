@@ -441,41 +441,94 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {flags.map((flag) => (
                 <div key={flag.id} className="card" style={{ padding: 18 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
                     <div style={{ flex: 1, minWidth: 260 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
                         <span className={`badge ${flag.status === "OPEN" ? "badge-lost" : "badge-resolved"}`}>
-                          {flag.status}
+                          Flag: {flag.status}
                         </span>
+                        {flag.report_type && (
+                          <span className={`badge ${flag.report_type === "LOST" ? "badge-lost" : "badge-found"}`}>
+                            {flag.report_type}
+                          </span>
+                        )}
+                        {flag.report_category && (
+                          <span className="badge badge-category">
+                            {flag.report_category}
+                          </span>
+                        )}
+                        {flag.report_status && (
+                          <span
+                            className={`badge ${
+                              flag.report_status === "ACTIVE"
+                                ? "badge-active"
+                                : flag.report_status === "RESOLVED"
+                                ? "badge-resolved"
+                                : "badge-lost"
+                            }`}
+                          >
+                            Post: {flag.report_status === "HIDDEN" ? "TAKEN DOWN" : flag.report_status}
+                          </span>
+                        )}
                         <span style={{ fontSize: "0.78rem", color: "var(--color-ink-secondary)" }}>
                           Reported: {new Date(flag.created_at).toLocaleDateString()}
                         </span>
-                        <span
-                          style={{
-                            fontSize: "0.75rem",
-                            fontFamily: "var(--font-family-mono)",
-                            backgroundColor: "var(--color-canvas)",
-                            padding: "2px 6px",
-                            borderRadius: 4,
-                            border: "1px solid var(--color-border)",
-                          }}
-                        >
-                          Report #{flag.report_id.slice(0, 8)}
-                        </span>
                       </div>
 
+                      {/* Item Details and Photo */}
+                      <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginTop: 8, marginBottom: 12 }}>
+                        {flag.report_image_url && (
+                          <img
+                            src={flag.report_image_url}
+                            alt={flag.report_item_name || "Report"}
+                            style={{
+                              width: 68,
+                              height: 68,
+                              objectFit: "cover",
+                              borderRadius: "var(--radius-sm)",
+                              border: "1px solid var(--color-border)",
+                              flexShrink: 0,
+                            }}
+                          />
+                        )}
+                        <div>
+                          <h3
+                            style={{
+                              margin: 0,
+                              fontSize: "1.08rem",
+                              color: "var(--color-ink-primary)",
+                              cursor: onNavigateToDetail ? "pointer" : "default",
+                            }}
+                            onClick={() => onNavigateToDetail && onNavigateToDetail(flag.report_id)}
+                          >
+                            {flag.report_item_name || `Report #${flag.report_id.slice(0, 8)}`}
+                          </h3>
+                          {flag.report_description && (
+                            <p className="text-secondary" style={{ fontSize: "0.85rem", marginTop: 4, lineHeight: 1.45 }}>
+                              {flag.report_description}
+                            </p>
+                          )}
+                          {flag.report_location && (
+                            <div style={{ fontSize: "0.78rem", color: "var(--color-ink-secondary)", marginTop: 4 }}>
+                              📍 {flag.report_location}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Reported Reason Banner */}
                       <div
                         style={{
                           backgroundColor: "var(--color-canvas)",
-                          borderLeft: "3px solid var(--color-teal)",
+                          borderLeft: "3px solid #D97706",
                           padding: "10px 14px",
                           borderRadius: "var(--radius-sm)",
-                          marginTop: 8,
-                          marginBottom: 8,
+                          marginTop: 6,
+                          marginBottom: 6,
                         }}
                       >
-                        <strong style={{ fontSize: "0.85rem", color: "var(--color-ink-primary)" }}>Reason:</strong>{" "}
-                        <span style={{ fontSize: "0.85rem", color: "var(--color-ink-secondary)" }}>{flag.reason}</span>
+                        <strong style={{ fontSize: "0.85rem", color: "#B45309" }}>Reported Abuse Reason:</strong>{" "}
+                        <span style={{ fontSize: "0.85rem", color: "var(--color-ink-primary)" }}>{flag.reason}</span>
                       </div>
                     </div>
 
@@ -487,23 +540,34 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           icon={<Eye size={13} />}
                           onClick={() => onNavigateToDetail(flag.report_id)}
                         >
-                          View Report
+                          View Full Post
                         </Button>
                       )}
 
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        icon={<EyeOff size={13} />}
-                        onClick={() => handleModerateReport(flag.report_id, "HIDDEN")}
-                      >
-                        Take Down
-                      </Button>
+                      {flag.report_status === "HIDDEN" ? (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          icon={<CheckCircle size={13} />}
+                          onClick={() => handleModerateReport(flag.report_id, "ACTIVE")}
+                        >
+                          Restore Post
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          icon={<EyeOff size={13} />}
+                          onClick={() => handleModerateReport(flag.report_id, "HIDDEN")}
+                        >
+                          Take Down (Hide)
+                        </Button>
+                      )}
 
                       {flag.status === "OPEN" && (
                         <>
                           <Button
-                            variant="primary"
+                            variant="secondary"
                             size="sm"
                             icon={<CheckCircle size={13} />}
                             onClick={() => handleReviewFlag(flag.id, "REVIEWED")}

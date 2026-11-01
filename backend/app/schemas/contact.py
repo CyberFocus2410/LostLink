@@ -47,6 +47,15 @@ class ReportFlagOut(BaseModel):
     status: str
     created_at: datetime
 
+    # Full report metadata for immediate moderation inspection
+    report_item_name: Optional[str] = None
+    report_type: Optional[str] = None
+    report_category: Optional[str] = None
+    report_status: Optional[str] = None
+    report_description: Optional[str] = None
+    report_location: Optional[str] = None
+    report_image_url: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 

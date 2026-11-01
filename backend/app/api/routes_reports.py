@@ -19,7 +19,7 @@ from app.schemas.report import (
 )
 from app.schemas.contact import ReportFlagCreate, ReportFlagOut
 from app.services.report_service import ReportService
-from app.services.auth_service import get_current_user
+from app.services.auth_service import get_current_user, get_optional_current_user
 from app.services.image_service import ImageValidationError
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -40,13 +40,18 @@ def list_reports(
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     sort: str = Query("date_desc", description="Sort order: date_desc, date_asc, created_desc, created_asc"),
     db: Session = Depends(get_db),
+    current_user=Depends(get_optional_current_user),
 ):
+    req_status = status_filter.value if status_filter else None
+    if req_status == "HIDDEN" and getattr(current_user, "role", "user") not in ("admin", "moderator"):
+        req_status = "ACTIVE"
+
     items, total = ReportService.list_reports(
         db,
         q=q,
         report_type=type.value if type else None,
         category=category.value if category else None,
-        status=status_filter.value if status_filter else None,
+        status=req_status,
         date_from=date_from,
         date_to=date_to,
         location=location,
@@ -97,6 +102,7 @@ def create_report(
 def get_report(
     report_id: str,
     db: Session = Depends(get_db),
+    current_user=Depends(get_optional_current_user),
 ):
     report = ReportService.get_report(db, report_id)
     if not report:
@@ -104,6 +110,14 @@ def get_report(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Report with ID '{report_id}' was not found.",
         )
+    if report.status == "HIDDEN":
+        user_role = getattr(current_user, "role", "user")
+        user_id = getattr(current_user, "id", None)
+        if user_role not in ("admin", "moderator") and user_id != report.owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="This report has been taken down by moderators.",
+            )
     return APIResponse.success(data=ReportOut.model_validate(report))
 
 

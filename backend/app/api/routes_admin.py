@@ -50,12 +50,33 @@ def list_reported_flags(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Lists abuse flags for review."""
+    """Lists abuse flags for review with full item and photo details."""
     query = db.query(ReportFlag)
     if flag_status:
         query = query.filter(ReportFlag.status == flag_status)
     flags = query.order_by(ReportFlag.created_at.desc()).all()
-    out = [ReportFlagOut.model_validate(f) for f in flags]
+    
+    out = []
+    for f in flags:
+        rep = db.query(Report).filter(Report.id == f.report_id).first()
+        first_img = rep.images[0].image_url if (rep and rep.images) else None
+        out.append(
+            ReportFlagOut(
+                id=f.id,
+                report_id=f.report_id,
+                reporter_id=f.reporter_id,
+                reason=f.reason,
+                status=f.status,
+                created_at=f.created_at,
+                report_item_name=rep.item_name if rep else "Deleted Report",
+                report_type=rep.type if rep else "UNKNOWN",
+                report_category=rep.category if rep else "OTHER",
+                report_status=rep.status if rep else "DELETED",
+                report_description=rep.description if rep else "",
+                report_location=rep.location_text if rep else "",
+                report_image_url=first_img,
+            )
+        )
     return APIResponse.success(data=out)
 
 
