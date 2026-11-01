@@ -18,6 +18,11 @@ htmlcov/
 *.db
 *.sqlite3
 
+# Local storage uploads
+uploads/
+backend/uploads/
+*.dump
+
 # Node & Frontend
 node_modules/
 dist/
