@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { Lock, ArrowLeft } from "lucide-react";
+import { Lock, ArrowLeft, LogIn, MapPin, Navigation } from "lucide-react";
 import { api } from "../api/client";
-import type { ReportType, CategoryEnum } from "../types/api";
+import type { ReportType, CategoryEnum, Community, ReportImage } from "../types/api";
 import { Button } from "../components/ui/Button";
+import { ImageUpload } from "../components/ui/ImageUpload";
+import type { PendingImage } from "../components/ui/ImageUpload";
+import { useAuth } from "../context/AuthContext";
 
 interface CreateEditReportPageProps {
   editReportId?: string | null;
   defaultType?: "LOST" | "FOUND";
   onCancel: () => void;
   onSuccess: (reportId: string) => void;
+  onOpenAuth?: () => void;
 }
 
 const CATEGORIES: { label: string; value: CategoryEnum }[] = [
@@ -26,7 +30,9 @@ export const CreateEditReportPage: React.FC<CreateEditReportPageProps> = ({
   defaultType = "LOST",
   onCancel,
   onSuccess,
+  onOpenAuth,
 }) => {
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const isEditing = Boolean(editReportId);
 
   const [type, setType] = useState<ReportType>(defaultType);
@@ -35,16 +41,38 @@ export const CreateEditReportPage: React.FC<CreateEditReportPageProps> = ({
   const [description, setDescription] = useState("");
   const [eventDate, setEventDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [locationText, setLocationText] = useState("");
+  const [communities, setCommunities] = useState<Community[]>([]);
+  const [communityId, setCommunityId] = useState<string>("");
+  const [latitude, setLatitude] = useState<string>("");
+  const [longitude, setLongitude] = useState<string>("");
+  const [geoStatus, setGeoStatus] = useState<string | null>(null);
 
-  // Private contact fields
-  const [contactName, setContactName] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
+  // Photos
+  const [existingImages, setExistingImages] = useState<ReportImage[]>([]);
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+
+  // Private contact fields — prefill from authenticated user profile
+  const [contactName, setContactName] = useState(() => user?.display_name || "");
+  const [contactEmail, setContactEmail] = useState(() => user?.email || "");
   const [contactPhone, setContactPhone] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(isEditing);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listCommunities()
+      .then((data) => setCommunities(data))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (user && !isEditing) {
+      if (!contactName) setContactName(user.display_name);
+      if (!contactEmail) setContactEmail(user.email);
+    }
+  }, [user, isEditing]);
 
   useEffect(() => {
     if (editReportId) {
@@ -62,11 +90,45 @@ export const CreateEditReportPage: React.FC<CreateEditReportPageProps> = ({
       setDescription(rep.description);
       setEventDate(rep.event_date);
       setLocationText(rep.location_text);
+      if (rep.community_id) setCommunityId(rep.community_id);
+      if (rep.latitude != null) setLatitude(String(rep.latitude));
+      if (rep.longitude != null) setLongitude(String(rep.longitude));
+      if (rep.images) setExistingImages(rep.images);
     } catch {
       setGeneralError("Failed to load existing report data for editing.");
     } finally {
       setInitialLoading(false);
     }
+  };
+
+  const handleDeleteExistingImage = async (imageId: string) => {
+    if (!editReportId) return;
+    try {
+      await api.deleteReportImage(editReportId, imageId);
+      setExistingImages((prev) => prev.filter((img) => img.id !== imageId));
+    } catch (err: any) {
+      setGeneralError(err.message || "Failed to remove image.");
+    }
+  };
+
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      setGeoStatus("Geolocation is not supported by your browser.");
+      return;
+    }
+    setGeoStatus("Fetching device GPS coordinates...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLatitude(pos.coords.latitude.toFixed(6));
+        setLongitude(pos.coords.longitude.toFixed(6));
+        setGeoStatus("GPS coordinates attached!");
+        setTimeout(() => setGeoStatus(null), 3000);
+      },
+      (err) => {
+        setGeoStatus("Could not acquire location: " + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   const validate = (): boolean => {
@@ -114,6 +176,12 @@ export const CreateEditReportPage: React.FC<CreateEditReportPageProps> = ({
     setGeneralError(null);
 
     try {
+      const parsedLat = latitude ? parseFloat(latitude) : undefined;
+      const parsedLon = longitude ? parseFloat(longitude) : undefined;
+      const validLat = parsedLat !== undefined && !isNaN(parsedLat) ? parsedLat : undefined;
+      const validLon = parsedLon !== undefined && !isNaN(parsedLon) ? parsedLon : undefined;
+
+      let targetReportId = editReportId;
       if (isEditing && editReportId) {
         const updated = await api.updateReport(editReportId, {
           item_name: itemName.trim(),
@@ -121,8 +189,11 @@ export const CreateEditReportPage: React.FC<CreateEditReportPageProps> = ({
           description: description.trim(),
           event_date: eventDate,
           location_text: locationText.trim(),
+          community_id: communityId || undefined,
+          latitude: validLat,
+          longitude: validLon,
         });
-        onSuccess(updated.id);
+        targetReportId = updated.id;
       } else {
         const created = await api.createReport({
           type,
@@ -131,24 +202,28 @@ export const CreateEditReportPage: React.FC<CreateEditReportPageProps> = ({
           description: description.trim(),
           event_date: eventDate,
           location_text: locationText.trim(),
+          community_id: communityId || undefined,
+          latitude: validLat,
+          longitude: validLon,
           contact_name: contactName.trim(),
           contact_email: contactEmail.trim(),
           contact_phone: contactPhone.trim() || undefined,
         });
-
-        // Track in local storage for "My Reports" view
-        try {
-          const stored = JSON.parse(localStorage.getItem("lostlink_my_reports") || "[]");
-          if (!stored.includes(created.id)) {
-            stored.unshift(created.id);
-            localStorage.setItem("lostlink_my_reports", JSON.stringify(stored));
-          }
-        } catch {
-          // LocalStorage fallback
-        }
-
-        onSuccess(created.id);
+        targetReportId = created.id;
       }
+
+      // Upload pending images
+      if (targetReportId && pendingImages.length > 0) {
+        for (const p of pendingImages) {
+          try {
+            await api.uploadReportImage(targetReportId, p.file);
+          } catch (imgErr) {
+            console.error("Image upload warning:", imgErr);
+          }
+        }
+      }
+
+      onSuccess(targetReportId!);
     } catch (err: any) {
       if (err.fields) {
         setFieldErrors(err.fields);
@@ -158,6 +233,40 @@ export const CreateEditReportPage: React.FC<CreateEditReportPageProps> = ({
       setLoading(false);
     }
   };
+
+  if (!isEditing && !authLoading && !isAuthenticated) {
+    return (
+      <div className="card" style={{ padding: 48, textAlign: "center", maxWidth: 520, margin: "40px auto" }}>
+        <div
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: "50%",
+            backgroundColor: "var(--color-sage-light)",
+            color: "var(--color-teal)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 16px",
+          }}
+        >
+          <Lock size={24} />
+        </div>
+        <h3>Authentication Required</h3>
+        <p className="text-secondary" style={{ fontSize: "0.88rem", marginTop: 8, marginBottom: 24 }}>
+          You must be signed in to submit a lost or found item notice. This allows you to manage, edit, and resolve your reports.
+        </p>
+        <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="primary" icon={<LogIn size={15} />} onClick={onOpenAuth}>
+            Sign In / Register
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (initialLoading) {
     return (
@@ -306,6 +415,76 @@ export const CreateEditReportPage: React.FC<CreateEditReportPageProps> = ({
           )}
         </div>
 
+        {/* Community / Campus Selection */}
+        {communities.length > 0 && (
+          <div className="form-group">
+            <label className="form-label" htmlFor="community">
+              Community / Campus <span style={{ color: "var(--color-ink-secondary)", fontWeight: "normal" }}>(Optional)</span>
+            </label>
+            <select
+              id="community"
+              className="form-select"
+              value={communityId}
+              onChange={(e) => setCommunityId(e.target.value)}
+            >
+              <option value="">Global / No specific community</option>
+              {communities.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <span className="form-hint">Matching is partitioned by community when specified.</span>
+          </div>
+        )}
+
+        {/* GPS Coordinates (Optional) */}
+        <div className="form-group" style={{ backgroundColor: "#F9F9F8", padding: 12, borderRadius: 8, border: "1px solid var(--color-border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+            <label className="form-label" style={{ marginBottom: 0, display: "flex", alignItems: "center", gap: 6 }}>
+              <MapPin size={16} color="var(--color-teal)" />
+              GPS Coordinates <span style={{ color: "var(--color-ink-secondary)", fontWeight: "normal", fontSize: "0.8rem" }}>(Optional - Enables Haversine Distance)</span>
+            </label>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: "4px 10px", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4 }}
+              onClick={handleGetLocation}
+            >
+              <Navigation size={14} /> Detect Current Location
+            </button>
+          </div>
+          {geoStatus && (
+            <div style={{ fontSize: "0.8rem", color: "var(--color-teal)", marginBottom: 8 }}>
+              {geoStatus}
+            </div>
+          )}
+          <div className="grid-2">
+            <div>
+              <label style={{ fontSize: "0.75rem", color: "var(--color-ink-secondary)", display: "block", marginBottom: 4 }}>Latitude</label>
+              <input
+                type="number"
+                step="any"
+                className="form-input"
+                placeholder="e.g. 37.7749"
+                value={latitude}
+                onChange={(e) => setLatitude(e.target.value)}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: "0.75rem", color: "var(--color-ink-secondary)", display: "block", marginBottom: 4 }}>Longitude</label>
+              <input
+                type="number"
+                step="any"
+                className="form-input"
+                placeholder="e.g. -122.4194"
+                value={longitude}
+                onChange={(e) => setLongitude(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Description */}
         <div className="form-group">
           <label className="form-label" htmlFor="description">
@@ -329,6 +508,17 @@ export const CreateEditReportPage: React.FC<CreateEditReportPageProps> = ({
               {description.length} / 1000
             </span>
           </div>
+        </div>
+
+        {/* Item Photos */}
+        <div style={{ backgroundColor: "#FFFFFF", padding: 16, borderRadius: 8, border: "1px solid var(--color-border)" }}>
+          <ImageUpload
+            existingImages={existingImages}
+            pendingImages={pendingImages}
+            onPendingImagesChange={setPendingImages}
+            onDeleteExistingImage={isEditing ? handleDeleteExistingImage : undefined}
+            disabled={loading}
+          />
         </div>
 
         {/* Private Contact Information (Only when creating) */}

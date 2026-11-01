@@ -7,6 +7,7 @@ import { Button } from "../components/ui/Button";
 import { ScoreBreakdown } from "../components/ui/ScoreBreakdown";
 import { DisclaimerBanner } from "../components/ui/DisclaimerBanner";
 import { Modal } from "../components/ui/Modal";
+import { useAuth } from "../context/AuthContext";
 
 interface ReportDetailPageProps {
   reportId: string;
@@ -21,6 +22,7 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({
   onEdit,
   onViewCandidate,
 }) => {
+  const { user } = useAuth();
   const [report, setReport] = useState<ReportItem | null>(null);
   const [matches, setMatches] = useState<MatchResultItem[]>([]);
   const [candidatePoolSize, setCandidatePoolSize] = useState<number>(0);
@@ -164,6 +166,9 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({
   }
 
   const isResolved = report.status === "RESOLVED";
+  const isOwner = Boolean(
+    user && report.owner_id && (report.owner_id === user.id || user.role === "admin")
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -174,7 +179,7 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({
         </Button>
 
         <div style={{ display: "flex", gap: 8 }}>
-          {!isResolved && (
+          {isOwner && !isResolved && (
             <>
               <Button variant="secondary" size="sm" icon={<Edit size={14} />} onClick={() => onEdit(report.id)}>
                 Edit
@@ -224,6 +229,41 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({
         <p style={{ fontSize: "0.95rem", lineHeight: 1.6, color: "var(--color-ink-primary)", marginTop: 8, marginBottom: 20 }}>
           {report.description}
         </p>
+
+        {/* Photo Gallery if images exist */}
+        {report.images && report.images.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ color: "var(--color-ink-secondary)", fontSize: "0.78rem", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Photos ({report.images.length})
+            </div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {report.images.map((img) => (
+                <a
+                  key={img.id}
+                  href={img.image_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "block",
+                    width: 140,
+                    height: 140,
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    border: "1px solid var(--color-border)",
+                    backgroundColor: "#F0F4F2",
+                  }}
+                >
+                  <img
+                    src={img.thumbnail_url || img.image_url}
+                    alt={report.item_name}
+                    loading="lazy"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Metadata Details Grid */}
         <div
@@ -357,6 +397,36 @@ export const ReportDetailPage: React.FC<ReportDetailPageProps> = ({
                 <p className="text-secondary" style={{ fontSize: "0.88rem", lineHeight: 1.5 }}>
                   {item.candidate.description}
                 </p>
+
+                {/* Candidate Photos if present */}
+                {item.candidate.images && item.candidate.images.length > 0 && (
+                  <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+                    {item.candidate.images.map((img) => (
+                      <a
+                        key={img.id}
+                        href={img.image_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          width: 72,
+                          height: 72,
+                          borderRadius: 6,
+                          overflow: "hidden",
+                          flexShrink: 0,
+                          border: "1px solid var(--color-border)",
+                          backgroundColor: "#F0F4F2",
+                        }}
+                      >
+                        <img
+                          src={img.thumbnail_url || img.image_url}
+                          alt={item.candidate.item_name}
+                          loading="lazy"
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      </a>
+                    ))}
+                  </div>
+                )}
 
                 {/* Candidate Details Snippet */}
                 <div style={{ display: "flex", gap: 16, fontSize: "0.8rem", color: "var(--color-ink-secondary)" }}>
