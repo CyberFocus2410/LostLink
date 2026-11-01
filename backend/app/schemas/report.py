@@ -38,6 +38,9 @@ class ReportCreate(BaseModel):
     contact_name: str = Field(..., min_length=2, max_length=100)
     contact_email: EmailStr
     contact_phone: Optional[str] = Field(None, max_length=30)
+    community_id: Optional[str] = None
+    latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
+    longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
 
     @field_validator("event_date")
     @classmethod
@@ -64,6 +67,9 @@ class ReportUpdate(BaseModel):
     event_date: Optional[date] = None
     location_text: Optional[str] = Field(None, min_length=2, max_length=150)
     status: Optional[ReportStatus] = None
+    community_id: Optional[str] = None
+    latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
+    longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
 
     @field_validator("event_date")
     @classmethod
@@ -73,6 +79,18 @@ class ReportUpdate(BaseModel):
             if (v - today).days > 1:
                 raise ValueError("Event date cannot be in the future")
         return v
+
+
+class ReportImageOut(BaseModel):
+    id: str
+    report_id: str
+    image_url: str
+    thumbnail_url: Optional[str] = None
+    file_size: int
+    content_type: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReportOut(BaseModel):
@@ -86,6 +104,11 @@ class ReportOut(BaseModel):
     location_text: str
     normalized_location: str
     status: ReportStatus
+    owner_id: Optional[str] = None
+    community_id: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    images: list[ReportImageOut] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

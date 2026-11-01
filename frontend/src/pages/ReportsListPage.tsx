@@ -232,6 +232,16 @@ export const ReportsListPage: React.FC<ReportsListPageProps> = ({
                   </div>
                   <Badge status={report.status} />
                 </div>
+                {report.images && report.images.length > 0 && (
+                  <div style={{ width: "100%", height: 130, borderRadius: 6, overflow: "hidden", marginBottom: 10, backgroundColor: "#F0F4F2" }}>
+                    <img
+                      src={report.images[0].thumbnail_url || report.images[0].image_url}
+                      alt={report.item_name}
+                      loading="lazy"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  </div>
+                )}
                 <h4 style={{ marginBottom: 6 }}>{report.item_name}</h4>
                 <p
                   className="text-secondary"

@@ -10,6 +10,16 @@ export type CategoryEnum =
   | "JEWELRY_WATCHES"
   | "OTHER";
 
+export interface ReportImage {
+  id: string;
+  report_id: string;
+  image_url: string;
+  thumbnail_url?: string | null;
+  file_size: number;
+  content_type: string;
+  created_at: string;
+}
+
 export interface ReportItem {
   id: string;
   type: ReportType;
@@ -20,8 +30,59 @@ export interface ReportItem {
   location_text: string;
   normalized_location: string;
   status: ReportStatus;
+  owner_id?: string | null;
+  community_id?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  images?: ReportImage[];
   created_at: string;
   updated_at: string;
+}
+
+export interface Community {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface FacilityCluster {
+  id: string;
+  community_id: string;
+  name: string;
+  aliases: string[];
+  created_at: string;
+}
+
+export interface User {
+  id: string;
+  display_name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RegisterPayload {
+  display_name: string;
+  email: string;
+  password: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface ForgotPasswordPayload {
+  email: string;
+}
+
+export interface ResetPasswordPayload {
+  token: string;
+  new_password: string;
 }
 
 export interface ReportCreatePayload {
@@ -31,6 +92,9 @@ export interface ReportCreatePayload {
   description: string;
   event_date: string;
   location_text: string;
+  community_id?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   contact_name: string;
   contact_email: string;
   contact_phone?: string;
@@ -42,6 +106,9 @@ export interface ReportUpdatePayload {
   description?: string;
   event_date?: string;
   location_text?: string;
+  community_id?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   status?: ReportStatus;
 }
 
@@ -71,7 +138,31 @@ export interface ContactRequestPayload {
   report_id: string;
   requester_name: string;
   requester_email: string;
+  requester_phone?: string;
   message: string;
+}
+
+export interface ContactRequestItem {
+  id: string;
+  report_id: string;
+  requester_id?: string | null;
+  requester_name: string;
+  requester_email: string;
+  requester_phone?: string | null;
+  message: string;
+  status: "PENDING" | "ACCEPTED" | "DECLINED";
+  owner_response?: string | null;
+  responded_at?: string | null;
+  created_at: string;
+}
+
+export interface ReportFlagItem {
+  id: string;
+  report_id: string;
+  reporter_id?: string | null;
+  reason: string;
+  status: string;
+  created_at: string;
 }
 
 export interface ReportFlagPayload {

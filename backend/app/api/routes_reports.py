@@ -4,7 +4,7 @@ Full lifecycle: creation, filtering, detail, updates, resolution, and flagging.
 """
 from datetime import date
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status, HTTPException
+from fastapi import APIRouter, Depends, Query, status, HTTPException, File, UploadFile
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.common import APIResponse, APIMeta, APIError
@@ -15,9 +15,12 @@ from app.schemas.report import (
     ReportCreate,
     ReportUpdate,
     ReportOut,
+    ReportImageOut,
 )
 from app.schemas.contact import ReportFlagCreate, ReportFlagOut
 from app.services.report_service import ReportService
+from app.services.auth_service import get_current_user
+from app.services.image_service import ImageValidationError
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -31,6 +34,8 @@ def list_reports(
     date_from: Optional[date] = Query(None, description="Earliest event date (YYYY-MM-DD)"),
     date_to: Optional[date] = Query(None, description="Latest event date (YYYY-MM-DD)"),
     location: Optional[str] = Query(None, description="Location substring"),
+    owner_id: Optional[str] = Query(None, description="Filter by owner ID"),
+    community_id: Optional[str] = Query(None, description="Filter by community ID"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     sort: str = Query("date_desc", description="Sort order: date_desc, date_asc, created_desc, created_asc"),
@@ -45,6 +50,8 @@ def list_reports(
         date_from=date_from,
         date_to=date_to,
         location=location,
+        owner_id=owner_id,
+        community_id=community_id,
         page=page,
         limit=limit,
         sort=sort,
@@ -55,12 +62,33 @@ def list_reports(
     return APIResponse.success(data=out_items, meta=meta)
 
 
+@router.get("/mine", response_model=APIResponse[List[ReportOut]])
+def list_my_reports(
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(50, ge=1, le=100, description="Items per page"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Returns reports created by the currently authenticated user."""
+    items, total = ReportService.list_reports(
+        db,
+        owner_id=current_user.id,
+        page=page,
+        limit=limit,
+        sort="created_desc",
+    )
+    out_items = [ReportOut.model_validate(r) for r in items]
+    meta = APIMeta(page=page, limit=limit, total=total)
+    return APIResponse.success(data=out_items, meta=meta)
+
+
 @router.post("", response_model=APIResponse[ReportOut], status_code=status.HTTP_201_CREATED)
 def create_report(
     report_in: ReportCreate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    created = ReportService.create_report(db, report_in)
+    created = ReportService.create_report(db, report_in, owner_id=current_user.id)
     out = ReportOut.model_validate(created)
     return APIResponse.success(data=out)
 
@@ -84,13 +112,20 @@ def update_report(
     report_id: str,
     update_in: ReportUpdate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    updated = ReportService.update_report(db, report_id, update_in)
-    if not updated:
+    report = ReportService.get_report(db, report_id)
+    if not report:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Report with ID '{report_id}' was not found.",
         )
+    if report.owner_id and report.owner_id != current_user.id and getattr(current_user, "role", "user") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to modify this report.",
+        )
+    updated = ReportService.update_report(db, report_id, update_in)
     return APIResponse.success(data=ReportOut.model_validate(updated))
 
 
@@ -98,13 +133,20 @@ def update_report(
 def resolve_report(
     report_id: str,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    resolved = ReportService.resolve_report(db, report_id)
-    if not resolved:
+    report = ReportService.get_report(db, report_id)
+    if not report:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Report with ID '{report_id}' was not found.",
         )
+    if report.owner_id and report.owner_id != current_user.id and getattr(current_user, "role", "user") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to resolve this report.",
+        )
+    resolved = ReportService.resolve_report(db, report_id)
     return APIResponse.success(data=ReportOut.model_validate(resolved))
 
 
@@ -122,3 +164,76 @@ def flag_report(
         )
     flag = ReportService.flag_report(db, report_id, flag_in)
     return APIResponse.success(data=ReportFlagOut.model_validate(flag))
+
+
+@router.post("/{report_id}/images", response_model=APIResponse[ReportImageOut], status_code=status.HTTP_201_CREATED)
+async def upload_report_image(
+    report_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Uploads and associates an image with a report (max 3 images, owner only)."""
+    report = ReportService.get_report(db, report_id)
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report with ID '{report_id}' was not found.",
+        )
+    if report.owner_id and report.owner_id != current_user.id and getattr(current_user, "role", "user") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to upload photos for this report.",
+        )
+    if len(report.images) >= 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 3 images allowed per report.",
+        )
+
+    raw_bytes = await file.read()
+    try:
+        image_record = ReportService.add_report_image(
+            db,
+            report_id=report_id,
+            file_bytes=raw_bytes,
+            original_filename=file.filename or "image.jpg",
+            content_type=file.content_type or "image/jpeg",
+        )
+    except ImageValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    return APIResponse.success(data=ReportImageOut.model_validate(image_record))
+
+
+@router.delete("/{report_id}/images/{image_id}", response_model=APIResponse[dict])
+def delete_report_image(
+    report_id: str,
+    image_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Deletes an image from a report (owner only)."""
+    report = ReportService.get_report(db, report_id)
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report with ID '{report_id}' was not found.",
+        )
+    if report.owner_id and report.owner_id != current_user.id and getattr(current_user, "role", "user") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to delete photos from this report.",
+        )
+
+    deleted = ReportService.delete_report_image(db, report_id=report_id, image_id=image_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Image with ID '{image_id}' not found on report '{report_id}'.",
+        )
+
+    return APIResponse.success(data={"message": "Image deleted successfully", "image_id": image_id})
+

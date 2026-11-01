@@ -182,6 +182,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 <Badge type={spotlightMatch.source.type} />
                 <Badge category={spotlightMatch.source.category} />
               </div>
+              {spotlightMatch.source.images && spotlightMatch.source.images.length > 0 && (
+                <div style={{ width: "100%", height: 110, borderRadius: 6, overflow: "hidden", marginBottom: 8, backgroundColor: "#F0F4F2" }}>
+                  <img
+                    src={spotlightMatch.source.images[0].thumbnail_url || spotlightMatch.source.images[0].image_url}
+                    alt={spotlightMatch.source.item_name}
+                    loading="lazy"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                </div>
+              )}
               <h4 style={{ fontSize: "1.05rem" }}>{spotlightMatch.source.item_name}</h4>
               <p className="text-secondary" style={{ fontSize: "0.85rem", marginTop: 4 }}>
                 {spotlightMatch.source.description}
@@ -198,6 +208,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 <Badge type={spotlightMatch.topMatch.candidate.type} />
                 <Badge category={spotlightMatch.topMatch.candidate.category} />
               </div>
+              {spotlightMatch.topMatch.candidate.images && spotlightMatch.topMatch.candidate.images.length > 0 && (
+                <div style={{ width: "100%", height: 110, borderRadius: 6, overflow: "hidden", marginBottom: 8, backgroundColor: "#F0F4F2" }}>
+                  <img
+                    src={spotlightMatch.topMatch.candidate.images[0].thumbnail_url || spotlightMatch.topMatch.candidate.images[0].image_url}
+                    alt={spotlightMatch.topMatch.candidate.item_name}
+                    loading="lazy"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                </div>
+              )}
               <h4 style={{ fontSize: "1.05rem" }}>{spotlightMatch.topMatch.candidate.item_name}</h4>
               <p className="text-secondary" style={{ fontSize: "0.85rem", marginTop: 4 }}>
                 {spotlightMatch.topMatch.candidate.description}
@@ -260,6 +280,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     <Badge type={report.type} />
                     <Badge status={report.status} />
                   </div>
+                  {report.images && report.images.length > 0 && (
+                    <div style={{ width: "100%", height: 120, borderRadius: 6, overflow: "hidden", marginBottom: 8, backgroundColor: "#F0F4F2" }}>
+                      <img
+                        src={report.images[0].thumbnail_url || report.images[0].image_url}
+                        alt={report.item_name}
+                        loading="lazy"
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    </div>
+                  )}
                   <h4 style={{ marginBottom: 4 }}>{report.item_name}</h4>
                   <p className="text-secondary" style={{ fontSize: "0.85rem", lineClamp: 2, WebkitLineClamp: 2, display: "-webkit-box", WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                     {report.description}

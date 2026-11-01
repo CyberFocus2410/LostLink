@@ -143,3 +143,149 @@ def test_empty_search_results_flow(client):
     assert body["data"] == []
     assert body["meta"]["total"] == 0
     assert body["error"] is None
+
+
+def test_complete_user_lifecycle_with_photo_contact_resolve_and_erasure(real_auth_client):
+    """
+    Prompt 9 Comprehensive QA Lifecycle:
+    register -> log in -> report lost item with photo -> see matches ->
+    send contact request -> owner accepts -> resolve -> delete account
+    """
+    client = real_auth_client
+    import io
+    from PIL import Image
+
+    # 1. Register User A (Report Owner)
+    reg_a = client.post(
+        "/api/auth/register",
+        json={
+            "display_name": "Lifecycle Owner",
+            "email": "owner_lifecycle@campus.edu",
+            "password": "Password123!",
+        },
+    )
+    assert reg_a.status_code == 201
+    assert "lostlink_access" in client.cookies
+
+    # 2. Report Lost Item
+    today = date.today()
+    rep_res = client.post(
+        "/api/reports",
+        json={
+            "type": "LOST",
+            "item_name": "Sony WH-1000XM5 Headphones",
+            "category": "ELECTRONICS",
+            "description": "Silver Sony XM5 headphones in gray case with aux cord.",
+            "event_date": str(today),
+            "location_text": "Engineering Building Lab 202",
+            "contact_name": "Lifecycle Owner",
+            "contact_email": "owner_lifecycle@campus.edu",
+        },
+    )
+    assert rep_res.status_code == 201
+    rep_id = rep_res.json()["data"]["id"]
+
+    # 3. Upload Photo to Report
+    img_byte_arr = io.BytesIO()
+    img = Image.new("RGB", (200, 200), color="silver")
+    img.save(img_byte_arr, format="JPEG")
+    img_byte_arr.seek(0)
+
+    photo_res = client.post(
+        f"/api/reports/{rep_id}/images",
+        files={"file": ("sony.jpg", img_byte_arr, "image/jpeg")},
+    )
+    assert photo_res.status_code == 201
+    img_data = photo_res.json()["data"]
+    assert img_data["report_id"] == rep_id
+    assert "image_url" in img_data
+
+    # 4. Register User B (Finder)
+    client.cookies.clear()
+    reg_b = client.post(
+        "/api/auth/register",
+        json={
+            "display_name": "Lifecycle Finder",
+            "email": "finder_lifecycle@campus.edu",
+            "password": "Password123!",
+        },
+    )
+    assert reg_b.status_code == 201
+
+    # User B reports Found Item
+    found_res = client.post(
+        "/api/reports",
+        json={
+            "type": "FOUND",
+            "item_name": "Silver Sony Headphones in Case",
+            "category": "ELECTRONICS",
+            "description": "Found silver Sony wireless headphones in gray pouch in engineering hall.",
+            "event_date": str(today),
+            "location_text": "Engineering Building Hallway",
+            "contact_name": "Lifecycle Finder",
+            "contact_email": "finder_lifecycle@campus.edu",
+        },
+    )
+    assert found_res.status_code == 201
+    found_id = found_res.json()["data"]["id"]
+
+    # 5. User B inspects matches -> sees User A's lost item
+    match_res = client.get(f"/api/reports/{found_id}/matches")
+    assert match_res.status_code == 200
+    candidates = match_res.json()["data"]["matches"]
+    assert any(c["candidate"]["id"] == rep_id for c in candidates)
+
+    # 6. User B sends contact request to User A's report
+    contact_req = client.post(
+        "/api/contact-requests",
+        json={
+            "report_id": rep_id,
+            "requester_name": "Lifecycle Finder",
+            "requester_email": "finder_lifecycle@campus.edu",
+            "requester_phone": "+1-555-8888",
+            "message": "I found your silver Sony headphones! They are safe with me.",
+        },
+    )
+    assert contact_req.status_code == 201
+    req_id = contact_req.json()["data"]["id"]
+
+    # 7. Log back in as User A (Owner)
+    client.cookies.clear()
+    login_a = client.post(
+        "/api/auth/login",
+        json={"email": "owner_lifecycle@campus.edu", "password": "Password123!"},
+    )
+    assert login_a.status_code == 200
+
+    # User A checks received contact requests -> sees masked contact
+    received_res = client.get("/api/contact-requests/received")
+    assert received_res.status_code == 200
+    requests_list = received_res.json()["data"]
+    matched_req = next((r for r in requests_list if r["id"] == req_id), None)
+    assert matched_req is not None
+    assert matched_req["status"] == "PENDING"
+    # Contact is masked
+    assert "@" in matched_req["requester_email"]
+    assert matched_req["requester_email"].startswith("f***")
+
+    # 8. User A accepts contact request
+    accept_res = client.post(f"/api/contact-requests/{req_id}/accept", json={"owner_notes": "Thank you so much!"})
+    assert accept_res.status_code == 200
+    accepted_data = accept_res.json()["data"]
+    assert accepted_data["status"] == "ACCEPTED"
+    # Direct contact now unmasked
+    assert accepted_data["requester_email"] == "finder_lifecycle@campus.edu"
+
+    # 9. User A marks report RESOLVED
+    res_res = client.post(f"/api/reports/{rep_id}/resolve")
+    assert res_res.status_code == 200
+    assert res_res.json()["data"]["status"] == "RESOLVED"
+
+    # 10. User A executes DPDP Act / GDPR Account Erasure
+    del_res = client.delete("/api/auth/me")
+    assert del_res.status_code == 200
+    assert del_res.json()["data"]["erased"] is True
+
+    # Verify session is terminated and user is scrubbed
+    me_res = client.get("/api/auth/me")
+    assert me_res.status_code == 401
