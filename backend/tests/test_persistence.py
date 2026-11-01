@@ -66,3 +66,17 @@ def test_sqlite_persistence_and_index_rebuild(tmp_path):
 
     db2.close()
     restarted_engine.dispose()
+
+
+def test_api_health_endpoint_db_status_and_index_size(client):
+    res = client.get("/api/health")
+    assert res.status_code == 200
+    data = res.json()["data"]
+
+    assert data["status"] == "healthy"
+    assert "database" in data
+    assert data["database"]["status"] == "connected"
+    assert data["database"]["dialect"] in ("sqlite", "postgresql")
+    assert "indexed_active_reports" in data
+    assert isinstance(data["indexed_active_reports"], int)
+
