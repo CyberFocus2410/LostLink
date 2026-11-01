@@ -54,6 +54,14 @@ class CSRFOriginMiddleware(BaseHTTPMiddleware):
         allowed = _build_allowed()
         allowed.add(str(request.base_url).rstrip("/"))
 
+        host = request.headers.get("host", "").strip()
+        if host:
+            allowed.add(f"https://{host}")
+            allowed.add(f"http://{host}")
+
+        if origin.endswith(".onrender.com"):
+            allowed.add(origin)
+
         if not origin:
             # No Origin header: allow in dev; block in production
             if settings.ENV == "production":
